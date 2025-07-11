@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whatsapp API</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js" crossorigin="anonymous"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div id="app" class="max-w-lg mx-auto mt-8 p-6 bg-white rounded-lg shadow-md">
+        <h1 class="text-3xl font-bold mb-2">Whatsapp API PMB</h1>
+        <img src="" alt="QR Code" id="qrcode" class="w-full hidden mb-4 border border-gray-200 rounded-md">
+        <h3 class="text-xl font-semibold mb-2">Logs:</h3>
+        <ul id="logs" class="bg-gray-100 rounded-md p-4 h-40 overflow-y-auto text-sm text-gray-700"></ul>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const socket = io();
+            const logs = document.getElementById('logs');
+            const qrcode = document.getElementById('qrcode');
+
+            socket.on('message', function(msg) {
+                const li = document.createElement('li');
+                li.textContent = msg;
+                if (logs.firstChild) {
+                    logs.insertBefore(li, logs.firstChild);
+                } else {
+                    logs.appendChild(li);
+                }
+                li.classList.add('mb-1');
+                if (logs.firstChild === li) {
+                    li.classList.add('text-green-600');
+                }
+            });
+
+            socket.on('qr', function(src) {
+                qrcode.src = src;
+                qrcode.classList.remove('hidden');
+            });
+
+            socket.on('ready', function(data) {
+                qrcode.classList.add('hidden');
+            });
+
+            socket.on('authenticated', function(data) {
+                qrcode.classList.add('hidden');
+            });
+        });
+    </script>
+</body>
+</html>
