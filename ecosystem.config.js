@@ -1,9 +1,13 @@
 require('dotenv').config();
 
+const APP_NAME = process.env.APP_NAME || 'WA-API';
+const APP_PORT_VAR = `${APP_NAME}-APP_PORT`;
+const APP_PORT = process.env[APP_PORT_VAR] || 8000;
+
 module.exports = {
   apps: [
     {
-      name: process.env.APP_NAME || 'WA-API',
+      name: APP_NAME,
       script: 'app.js',
       instances: 1, // Single instance
       exec_mode: 'fork',
@@ -12,15 +16,15 @@ module.exports = {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
-        APP_PORT: process.env.APP_PORT || 8000,
+        APP_PORT: APP_PORT,
       },
       env_development: {
         NODE_ENV: 'development',
-        APP_PORT: process.env.APP_PORT || 8000,
+        APP_PORT: APP_PORT,
       },
       env_production: {
         NODE_ENV: 'production',
-        APP_PORT: process.env.APP_PORT || 8000,
+        APP_PORT: APP_PORT,
       },
       // Logging configuration
       log_file: 'logs/combined.log',
