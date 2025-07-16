@@ -10,7 +10,13 @@ const fileUpload = require('express-fileupload');
 const axios = require('axios');
 const mime = require('mime-types');
 
-const port = process.env.PORT || 8004;
+// Load environment variables
+require('dotenv').config();
+
+// Dynamic port configuration
+const APP_NAME = process.env.APP_NAME || 'WA-API';
+const APP_PORT_VAR = `${APP_NAME}-APP_PORT`;
+const port = process.env[APP_PORT_VAR] || process.env.APP_PORT || 8000;
 
 const app = express();
 const server = http.createServer(app);

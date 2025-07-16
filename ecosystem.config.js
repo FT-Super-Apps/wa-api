@@ -4,6 +4,10 @@ const APP_NAME = process.env.APP_NAME || 'WA-API';
 const APP_PORT_VAR = `${APP_NAME}-APP_PORT`;
 const APP_PORT = process.env[APP_PORT_VAR] || 8000;
 
+console.log(`🔧 Debug: APP_NAME = ${APP_NAME}`);
+console.log(`🔧 Debug: APP_PORT_VAR = ${APP_PORT_VAR}`);
+console.log(`🔧 Debug: APP_PORT = ${APP_PORT}`);
+
 module.exports = {
   apps: [
     {
