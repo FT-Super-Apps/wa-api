@@ -174,6 +174,39 @@ const checkRegisteredNumber = async function(number) {
   return isRegistered;
 }
 
+// Check if number is registered
+app.post('/is-registered', [
+  body('number').notEmpty().withMessage('Number is required'),
+], async (req, res) => {
+  const errors = validationResult(req).formatWith(({
+    msg
+  }) => {
+    return msg;
+  });
+
+  if (!errors.isEmpty()) {
+    return res.status(422).json({
+      status: false,
+      message: errors.mapped()
+    });
+  }
+
+  const number = phoneNumberFormatter(req.body.number);
+  const isRegistered = await client.isRegisteredUser(number);
+  
+  if (!isRegistered) {
+    return res.status(422).json({
+      status: false,
+      message: 'The number is not registered'
+    });
+  } else {
+    return res.status(200).json({
+      status: true,
+      message: 'The number is registered'
+    });
+  }
+});
+
 // Send message
 app.post('/send-message', [
   body('number').notEmpty(),
