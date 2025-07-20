@@ -170,9 +170,29 @@ io.on('connection', function(socket) {
 
 
 const checkRegisteredNumber = async function(number) {
-  const isRegistered = await client.isRegisteredUser(number);
-  return isRegistered;
+  try {
+    // Check if client is ready
+    if (!client || !client.info) {
+      throw new Error('WhatsApp client is not ready yet');
+    }
+    
+    const isRegistered = await client.isRegisteredUser(number);
+    return isRegistered;
+  } catch (error) {
+    console.error('Error checking registered number:', error);
+    throw error;
+  }
 }
+
+// Check client status
+app.get('/status', (req, res) => {
+  const isReady = client && client.info;
+  res.status(200).json({
+    status: true,
+    client_ready: isReady,
+    message: isReady ? 'WhatsApp client is ready' : 'WhatsApp client is not ready yet'
+  });
+});
 
 // Check if number is registered
 app.post('/is-registered', [
@@ -191,18 +211,34 @@ app.post('/is-registered', [
     });
   }
 
-  const number = phoneNumberFormatter(req.body.number);
-  const isRegistered = await client.isRegisteredUser(number);
-  
-  if (!isRegistered) {
-    return res.status(422).json({
+  try {
+    // Check if client is ready
+    if (!client || !client.info) {
+      return res.status(503).json({
+        status: false,
+        message: 'WhatsApp client is not ready yet. Please wait for initialization to complete.'
+      });
+    }
+
+    const number = phoneNumberFormatter(req.body.number);
+    const isRegistered = await client.isRegisteredUser(number);
+    
+    if (!isRegistered) {
+      return res.status(422).json({
+        status: false,
+        message: 'The number is not registered'
+      });
+    } else {
+      return res.status(200).json({
+        status: true,
+        message: 'The number is registered'
+      });
+    }
+  } catch (error) {
+    console.error('Error in /is-registered:', error);
+    return res.status(500).json({
       status: false,
-      message: 'The number is not registered'
-    });
-  } else {
-    return res.status(200).json({
-      status: true,
-      message: 'The number is registered'
+      message: 'Error checking number registration: ' + error.message
     });
   }
 });
@@ -225,29 +261,46 @@ app.post('/send-message', [
     });
   }
 
-  const number = phoneNumberFormatter(req.body.number);
-  const message = req.body.message;
+  try {
+    // Check if client is ready
+    if (!client || !client.info) {
+      return res.status(503).json({
+        status: false,
+        message: 'WhatsApp client is not ready yet. Please wait for initialization to complete.'
+      });
+    }
 
-  const isRegisteredNumber = await checkRegisteredNumber(number);
+    const number = phoneNumberFormatter(req.body.number);
+    const message = req.body.message;
 
-  if (!isRegisteredNumber) {
-    return res.status(422).json({
+    const isRegisteredNumber = await checkRegisteredNumber(number);
+
+    if (!isRegisteredNumber) {
+      return res.status(422).json({
+        status: false,
+        message: 'The number is not registered'
+      });
+    }
+
+    client.sendMessage(number, message).then(response => {
+      res.status(200).json({
+        status: true,
+        response: response
+      });
+    }).catch(err => {
+      console.error('Error sending message:', err);
+      res.status(500).json({
+        status: false,
+        response: err.message
+      });
+    });
+  } catch (error) {
+    console.error('Error in /send-message:', error);
+    return res.status(500).json({
       status: false,
-      message: 'The number is not registered'
+      message: 'Error processing request: ' + error.message
     });
   }
-
-  client.sendMessage(number, message).then(response => {
-    res.status(200).json({
-      status: true,
-      response: response
-    });
-  }).catch(err => {
-    res.status(500).json({
-      status: false,
-      response: err
-    });
-  });
 });
 
 // Endpoint API untuk menambahkan nomor ke grup
