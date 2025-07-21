@@ -341,38 +341,84 @@ app.post('/add-to-group', [
     }
 });
 
-// Send media
-app.post('/send-media', async (req, res) => {
-  const number = phoneNumberFormatter(req.body.number);
-  const caption = req.body.caption;
-  const fileUrl = req.body.file;
-
-  // const media = MessageMedia.fromFilePath('./image-example.png');
-  // const file = req.files.file;
-  // const media = new MessageMedia(file.mimetype, file.data.toString('base64'), file.name);
-  let mimetype;
-  const attachment = await axios.get(fileUrl, {
-    responseType: 'arraybuffer'
-  }).then(response => {
-    mimetype = response.headers['content-type'];
-    return response.data.toString('base64');
+// Send media with file upload
+app.post('/send-media', [
+  body('number').notEmpty().withMessage('Number is required'),
+], async (req, res) => {
+  const errors = validationResult(req).formatWith(({
+    msg
+  }) => {
+    return msg;
   });
 
-  const media = new MessageMedia(mimetype, attachment, 'Media');
+  if (!errors.isEmpty()) {
+    return res.status(422).json({
+      status: false,
+      message: errors.mapped()
+    });
+  }
 
-  client.sendMessage(number, media, {
-    caption: caption
-  }).then(response => {
+  try {
+    // Check if client is ready
+    if (!client || !client.info) {
+      return res.status(503).json({
+        status: false,
+        message: 'WhatsApp client is not ready yet. Please wait for initialization to complete.'
+      });
+    }
+
+    const number = phoneNumberFormatter(req.body.number);
+    const caption = req.body.caption || '';
+
+    // Check if file is uploaded
+    if (!req.files || !req.files.file) {
+      return res.status(422).json({
+        status: false,
+        message: 'No file uploaded. Please upload a file.'
+      });
+    }
+
+    const file = req.files.file;
+    console.log('Processing uploaded file:', file.name, 'Size:', file.size, 'Type:', file.mimetype);
+
+    // Check file size (max 64MB)
+    const maxSize = 64 * 1024 * 1024; // 64MB
+    if (file.size > maxSize) {
+      return res.status(422).json({
+        status: false,
+        message: 'File size too large. Maximum size is 64MB.'
+      });
+    }
+
+    // Create media from uploaded file
+    const media = new MessageMedia(file.mimetype, file.data.toString('base64'), file.name);
+
+    // Check if number is registered
+    const isRegisteredNumber = await checkRegisteredNumber(number);
+    if (!isRegisteredNumber) {
+      return res.status(422).json({
+        status: false,
+        message: 'The number is not registered'
+      });
+    }
+
+    // Send media message
+    const response = await client.sendMessage(number, media, {
+      caption: caption
+    });
+
     res.status(200).json({
       status: true,
-      response: response
+      message: 'Media sent successfully'
     });
-  }).catch(err => {
+
+  } catch (error) {
+    console.error('Error in /send-media:', error);
     res.status(500).json({
       status: false,
-      response: err
+      message: 'Error sending media: ' + error.message
     });
-  });
+  }
 });
 
 const findGroupByName = async function(name) {
