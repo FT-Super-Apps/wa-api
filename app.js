@@ -33,9 +33,16 @@ app.use(express.urlencoded({
  * 
  * Many people confused about the warning for file-upload
  * So, we just disabling the debug for simplicity.
+ * 
+ * Enhanced configuration for larger files
  */
 app.use(fileUpload({
-  debug: false
+  debug: false,
+  limits: { 
+    fileSize: 100 * 1024 * 1024 // 100MB limit for uploads
+  },
+  useTempFiles: false, // Keep files in memory to avoid reading issues
+  createParentPath: true
 }));
 
 app.get('/', (req, res) => {
@@ -69,6 +76,9 @@ const client = new Client({
       "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2413.51-beta.html",
   },
 });
+
+// Fix EventEmitter memory leak warning
+client.setMaxListeners(20);
 
 client.on('message', msg => {
   if (msg.body == '!ping') {
@@ -380,18 +390,94 @@ app.post('/send-media', [
 
     const file = req.files.file;
     console.log('Processing uploaded file:', file.name, 'Size:', file.size, 'Type:', file.mimetype);
+    console.log('File object keys:', Object.keys(file));
+    console.log('Has data property:', 'data' in file);
+    console.log('Has tempFilePath property:', 'tempFilePath' in file);
+    
+    // Debug file properties
+    if (file.data) {
+      console.log('File data type:', typeof file.data);
+      console.log('File data is Buffer:', Buffer.isBuffer(file.data));
+    }
 
-    // Check file size (max 64MB)
-    const maxSize = 64 * 1024 * 1024; // 64MB
+    // Check file size based on file type (adjusted for WhatsApp Web limits)
+    let maxSize;
+    if (file.mimetype.startsWith('image/')) {
+      maxSize = 16 * 1024 * 1024; // 16MB for images
+    } else if (file.mimetype.startsWith('video/')) {
+      maxSize = 64 * 1024 * 1024; // 64MB for videos (WhatsApp Web can handle larger videos)
+    } else if (file.mimetype.startsWith('audio/')) {
+      maxSize = 64 * 1024 * 1024; // 64MB for audio files (accommodate larger audio files)
+    } else {
+      maxSize = 100 * 1024 * 1024; // 100MB for documents
+    }
+
     if (file.size > maxSize) {
+      const maxSizeMB = Math.round(maxSize / (1024 * 1024));
       return res.status(422).json({
         status: false,
-        message: 'File size too large. Maximum size is 64MB.'
+        message: `File size too large. Maximum size for ${file.mimetype.split('/')[0]} files is ${maxSizeMB}MB.`
       });
     }
 
-    // Create media from uploaded file
-    const media = new MessageMedia(file.mimetype, file.data.toString('base64'), file.name);
+    // Create media from uploaded file with enhanced error handling
+    let media;
+    try {
+      console.log('Creating media object...');
+      console.log('File data length:', file.data ? file.data.length : 'No data property');
+      console.log('File mimetype:', file.mimetype);
+      console.log('File name:', file.name);
+      
+      // Check if file data exists and is not empty
+      if (!file.data || file.data.length === 0) {
+        // If data property is empty, try reading from tempFilePath if available
+        if (file.tempFilePath && fs.existsSync(file.tempFilePath)) {
+          console.log('Reading file from tempFilePath:', file.tempFilePath);
+          file.data = fs.readFileSync(file.tempFilePath);
+          console.log('File read from temp path, size:', file.data.length);
+        } else {
+          throw new Error('File data is empty or not properly uploaded');
+        }
+      }
+      
+      // Convert file data to base64
+      let base64Data;
+      if (Buffer.isBuffer(file.data)) {
+        base64Data = file.data.toString('base64');
+      } else {
+        base64Data = Buffer.from(file.data).toString('base64');
+      }
+      
+      if (!base64Data || base64Data.length === 0) {
+        throw new Error('Failed to convert file to base64');
+      }
+      
+      // For Excel files, ensure proper mimetype
+      let mimetype = file.mimetype;
+      if (file.name.toLowerCase().endsWith('.xlsx') && !mimetype.includes('spreadsheetml')) {
+        mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      } else if (file.name.toLowerCase().endsWith('.xls') && !mimetype.includes('excel')) {
+        mimetype = 'application/vnd.ms-excel';
+      }
+      
+      media = new MessageMedia(mimetype, base64Data, file.name);
+      
+      console.log('Media object created successfully');
+      console.log('Media data length:', media.data ? media.data.length : 'undefined');
+      console.log('Media mimetype:', media.mimetype);
+      
+      // Additional validation
+      if (!media.data || media.data.length === 0) {
+        throw new Error('Media object created but data is empty');
+      }
+      
+    } catch (mediaError) {
+      console.error('Error creating media object:', mediaError);
+      return res.status(422).json({
+        status: false,
+        message: 'Failed to process uploaded file: ' + mediaError.message
+      });
+    }
 
     // Check if number is registered
     const isRegisteredNumber = await checkRegisteredNumber(number);
@@ -402,15 +488,42 @@ app.post('/send-media', [
       });
     }
 
-    // Send media message
-    const response = await client.sendMessage(number, media, {
-      caption: caption
-    });
-
-    res.status(200).json({
-      status: true,
-      message: 'Media sent successfully'
-    });
+    // Send media message with extended timeout for larger files
+    try {
+      console.log('Sending media to WhatsApp...');
+      const response = await Promise.race([
+        client.sendMessage(number, media, { caption: caption }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Send media timeout after 120 seconds')), 120000) // Extended to 2 minutes
+        )
+      ]);
+      
+      console.log('Media sent successfully');
+      res.status(200).json({
+        status: true,
+        message: 'Media sent successfully'
+      });
+      
+    } catch (sendError) {
+      console.error('Error sending media to WhatsApp:', sendError);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Error sending media';
+      if (sendError.message.includes('timeout')) {
+        errorMessage = 'Media sending timeout. Large files may take longer to process.';
+      } else if (sendError.message.includes('Evaluation failed')) {
+        errorMessage = 'WhatsApp Web failed to process the media file. This may happen with very large files or unsupported formats.';
+      } else if (sendError.message.includes('Protocol error')) {
+        errorMessage = 'Connection error with WhatsApp Web. Please try again.';
+      } else if (sendError.message.includes('Target closed')) {
+        errorMessage = 'WhatsApp Web connection lost. Please check your connection and try again.';
+      }
+      
+      return res.status(500).json({
+        status: false,
+        message: errorMessage
+      });
+    }
 
   } catch (error) {
     console.error('Error in /send-media:', error);
