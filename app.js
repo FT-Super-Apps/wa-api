@@ -46,8 +46,22 @@ app.use(fileUpload({
 }));
 
 app.get('/', (req, res) => {
-  res.sendFile('index.html', {
-    root: __dirname
+  // Read the HTML file and replace placeholder with APP_NAME
+  const path = require('path');
+  const htmlPath = path.join(__dirname, 'index.html');
+  
+  fs.readFile(htmlPath, 'utf8', (err, data) => {
+    if (err) {
+      return res.status(500).send('Error loading page');
+    }
+    
+    // Replace the title with dynamic APP_NAME
+    const modifiedHtml = data.replace(
+      'Whatsapp-App-Name', 
+      `Whatsapp API Server : ${APP_NAME}`
+    );
+    
+    res.send(modifiedHtml);
   });
 });
 
